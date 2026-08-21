@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AXIOM — Compute Beyond the Edge</title>
+<meta name="description" content="AXIOM Core — an adaptive silicon and photonic compute substrate." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05060a;
+    --bg-alt:#0a0c14;
+    --bg-soft:#0d0f1a;
+    --glass: rgba(255,255,255,0.045);
+    --glass-strong: rgba(255,255,255,0.07);
+    --glass-border: rgba(255,255,255,0.09);
+    --blue:#3b7cff;
+    --purple:#8b5cf6;
+    --cyan:#2de2e6;
+    --text:#eceef5;
+    --muted:#8b90a6;
+    --muted-2:#565b70;
+    --font-display:'Space Grotesk', sans-serif;
+    --font-body:'Inter', sans-serif;
+    --font-mono:'JetBrains Mono', monospace;
+    --ease: cubic-bezier(.16,.84,.44,1);
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  html,body{ background:var(--bg); }
+  body{
+    font-family:var(--font-body);
+    color:var(--text);
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  ::selection{ background:var(--purple); color:#fff; }
+
+  a{ color:inherit; text-decoration:none; }
+  button{ font-family:inherit; border:none; background:none; color:inherit; cursor:pointer; }
+
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:3px; border-radius:4px; }
+
+  .skip-link{
+    position:absolute; left:-999px; top:0; z-index:999;
+    background:var(--cyan); color:#000; padding:10px 16px; font-weight:600;
+  }
+  .skip-link:focus{ left:16px; top:16px; }
+
+  /* ---------- background layers ---------- */
+  #bg-canvas{
+    position:fixed; inset:0; width:100%; height:100%;
+    z-index:0; display:block;
+  }
+  .vignette{
+    position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:
+      radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(0,0,0,0.55) 100%),
+      linear-gradient(180deg, rgba(0,0,0,0.15), transparent 12%, transparent 88%, rgba(0,0,0,0.4));
+  }
+  .grain{
+    position:fixed; inset:0; z-index:2; pointer-events:none; opacity:.035; mix-blend-mode:overlay;
+  }
+  .spotlight{
+    position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(600px circle at var(--mx,50%) var(--my,50%), rgba(59,124,255,0.08), transparent 60%);
+    transition:opacity .3s;
+  }
+
+  /* ---------- loader ---------- */
+  #loader{
+    position:fixed; inset:0; z-index:999; background:var(--bg);
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px;
+    transition:opacity .8s var(--ease), visibility .8s;
+  }
+  #loader.hidden{ opacity:0; visibility:hidden; pointer-events:none; }
+  .loader-mark{
+    width:46px; height:46px; border-radius:2px;
+    border:1px solid rgba(255,255,255,0.15);
+    position:relative;
+    animation:loaderspin 2.4s linear infinite;
+  }
+  .loader-mark::before{
+    content:''; position:absolute; inset:8px;
+    border:1px solid var(--cyan); opacity:.7;
+    animation:loaderspin 1.6s linear infinite reverse;
+  }
+  @keyframes loaderspin{ to{ transform:rotate(360deg); } }
+  .loader-text{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.25em;
+    color:var(--muted); text-transform:uppercase;
+  }
+
+  /* ---------- layout helpers ---------- */
+  .container{ max-width:1240px; margin:0 auto; padding:0 32px; }
+  .section{ position:relative; z-index:10; }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:10px;
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--cyan); margin-bottom:22px;
+  }
+  .eyebrow::before{
+    content:''; width:7px; height:7px; border-radius:50%;
+    background:var(--cyan); box-shadow:0 0 10px 2px var(--cyan);
+  }
+  .grad{
+    background:linear-gradient(100deg, var(--blue), var(--cyan) 55%, var(--purple));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+
+  .reveal{ opacity:0; transform:translateY(28px); transition:opacity .9s var(--ease), transform .9s var(--ease); }
+  .reveal.in-view{ opacity:1; transform:translateY(0); }
+
+  /* ---------- nav ---------- */
+  .nav{
+    position:fixed; top:0; left:0; right:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:22px 32px; backdrop-filter:blur(0px);
+    transition:background .4s var(--ease), backdrop-filter .4s var(--ease), border-color .4s var(--ease);
+    border-bottom:1px solid transparent;
+  }
+  .nav.scrolled{
+    background:rgba(5,6,10,0.55); backdrop-filter:blur(16px);
+    border-bottom:1px solid var(--glass-border);
+  }
+  .nav-logo{
+    font-family:var(--font-display); font-weight:700; font-size:17px; letter-spacing:.06em;
+    display:flex; align-items:center; gap:9px;
+  }
+  .nav-logo span.dot{ width:7px; height:7px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px 2px var(--cyan); }
+  .nav-links{ display:flex; gap:34px; font-size:13.5px; color:var(--muted); }
+  .nav-links a{ position:relative; transition:color .25s; }
+  .nav-links a:hover{ color:var(--text); }
+  .nav-links a::after{
+    content:''; position:absolute; left:0; bottom:-6px; height:1px; width:0;
+    background:var(--cyan); transition:width .3s var(--ease);
+  }
+  .nav-links a:hover::after{ width:100%; }
+  .nav-cta{ display:flex; align-items:center; gap:18px; }
+  .nav-only-desktop{ display:flex; }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    position:relative; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font-family:var(--font-body); font-weight:600; font-size:14px;
+    padding:14px 26px; border-radius:10px; white-space:nowrap;
+    transition:transform .35s var(--ease), box-shadow .35s var(--ease), background .35s var(--ease), border-color .35s var(--ease);
+    will-change:transform;
+  }
+  .btn-primary{
+    color:#03040a;
+    background:linear-gradient(100deg, var(--cyan), var(--blue));
+    box-shadow:0 0 0 rgba(45,226,230,0);
+  }
+  .btn-primary:hover{ box-shadow:0 8px 30px -6px rgba(45,226,230,0.55); transform:translateY(-2px); }
+  .btn-ghost{
+    color:var(--text); background:var(--glass); border:1px solid var(--glass-border);
+  }
+  .btn-ghost:hover{ background:var(--glass-strong); border-color:rgba(255,255,255,0.2); transform:translateY(-2px); }
+  .btn-large{ padding:18px 38px; font-size:15.5px; border-radius:12px; }
+  .btn-icon{ width:15px; height:15px; }
+
+  /* ---------- hero ---------- */
+  .hero{
+    min-height:100svh; display:flex; flex-direction:column; justify-content:center;
+    padding:120px 32px 60px; background:transparent;
+  }
+  .hero-content{ max-width:760px; }
+  .hero h1{
+    font-family:var(--font-display); font-weight:600;
+    font-size:clamp(40px, 7.4vw, 84px); line-height:1.03; letter-spacing:-.02em;
+    margin-bottom:26px;
+  }
+  .hero p{
+    font-size:clamp(15px,1.8vw,18px); line-height:1.65; color:var(--muted);
+    max-width:520px; margin-bottom:40px;
+  }
+  .cta-row{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:64px; }
+
+  .scroll-indicator{
+    position:absolute; bottom:38px; left:32px;
+    display:flex; align-items:center; gap:12px;
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:.2em; color:var(--muted-2);
+    text-transform:uppercase;
+  }
+  .scroll-line{ width:1px; height:38px; background:linear-gradient(var(--cyan), transparent); position:relative; overflow:hidden; }
+  .scroll-line::after{
+    content:''; position:absolute; left:0; top:-100%; width:100%; height:100%;
+    background:linear-gradient(var(--text), transparent);
+    animation:scrolldrip 2.2s ease-in-out infinite;
+  }
+  @keyframes scrolldrip{ 0%{ top:-100% } 60%{ top:100% } 100%{ top:100% } }
+
+  .hero-stat-strip{
+    position:absolute; right:32px; bottom:38px; display:flex; gap:36px;
+  }
+  .hero-stat{ text-align:right; }
+  .hero-stat b{ display:block; font-family:var(--font-mono); font-size:15px; color:var(--cyan); }
+  .hero-stat span{ font-size:10.5px; color:var(--muted-2); letter-spacing:.08em; text-transform:uppercase; }
+
+  /* ---------- section shells with dim backdrop over canvas ---------- */
+  .panel-bg{
+    background:linear-gradient(180deg, rgba(8,9,15,0.2), var(--bg-alt) 12%, var(--bg-alt) 88%, rgba(8,9,15,0.2));
+    padding:150px 32px;
+  }
+
+  .section-head{ max-width:640px; margin-bottom:64px; }
+  .section-head h2{
+    font-family:var(--font-display); font-weight:600; letter-spacing:-.01em;
+    font-size:clamp(28px,4vw,44px); line-height:1.15;
+  }
+
+  /* ---------- about / cards ---------- */
+  .cards-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:20px;
+  }
+  .glass-card{
+    background:var(--glass); border:1px solid var(--glass-border); border-radius:16px;
+    padding:30px 26px; backdrop-filter:blur(18px);
+    transition:transform .5s var(--ease), border-color .5s var(--ease), background .5s var(--ease);
+    position:relative; overflow:hidden;
+  }
+  .glass-card::before{
+    content:''; position:absolute; inset:0; opacity:0; transition:opacity .5s var(--ease);
+    background:radial-gradient(280px circle at var(--cx,50%) var(--cy,0%), rgba(139,92,246,0.16), transparent 70%);
+  }
+  .glass-card:hover{ transform:translateY(-6px); border-color:rgba(255,255,255,0.18); background:var(--glass-strong); }
+  .glass-card:hover::before{ opacity:1; }
+  .card-icon{
+    width:38px; height:38px; border-radius:10px; margin-bottom:22px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, rgba(59,124,255,0.18), rgba(45,226,230,0.1));
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .card-icon svg{ width:18px; height:18px; stroke:var(--cyan); }
+  .glass-card h3{ font-family:var(--font-display); font-size:18px; font-weight:600; margin-bottom:10px; }
+  .glass-card p{ font-size:13.8px; line-height:1.6; color:var(--muted); }
+
+  /* ---------- showcase ---------- */
+  .showcase{ padding:150px 32px 90px; background:transparent; min-height:100svh; }
+  .showcase-inner{ max-width:1240px; margin:0 auto; }
+  .showcase-stage{
+    position:relative; height:56vh; min-height:380px; margin-top:20px;
+  }
+  .hotspots{ position:absolute; inset:0; pointer-events:none; }
+  .hotspot{
+    position:absolute; transform:translate(-50%,-50%);
+    pointer-events:auto; display:flex; align-items:center; gap:10px;
+    cursor:pointer; transition:opacity .3s;
+  }
+  .hotspot-dot{
+    width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,0.9);
+    box-shadow:0 0 0 0 rgba(45,226,230,0.5);
+    animation:hotspotpulse 2.4s ease-out infinite;
+    transition:background .3s, transform .3s;
+  }
+  .hotspot.active .hotspot-dot{ background:var(--cyan); transform:scale(1.15); }
+  @keyframes hotspotpulse{
+    0%{ box-shadow:0 0 0 0 rgba(45,226,230,0.45); }
+    70%{ box-shadow:0 0 0 14px rgba(45,226,230,0); }
+    100%{ box-shadow:0 0 0 0 rgba(45,226,230,0); }
+  }
+  .hotspot-label{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    background:rgba(6,7,12,0.7); border:1px solid var(--glass-border); backdrop-filter:blur(10px);
+    padding:6px 11px; border-radius:20px; white-space:nowrap; color:var(--muted);
+    transition:color .3s, border-color .3s;
+  }
+  .hotspot.active .hotspot-label{ color:var(--text); border-color:rgba(45,226,230,0.4); }
+  .showcase-caption{
+    text-align:center; font-family:var(--font-mono); font-size:11px; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--muted-2); margin-top:10px;
+  }
+  .showcase-panel{
+    max-width:520px; margin:34px auto 0; text-align:center;
+    background:var(--glass); border:1px solid var(--glass-border); border-radius:16px;
+    padding:24px 30px; backdrop-filter:blur(18px);
+    transition:opacity .35s var(--ease), transform .35s var(--ease);
+  }
+  .showcase-panel h4{ font-family:var(--font-display); font-size:15px; color:var(--cyan); margin-bottom:8px; letter-spacing:.02em; }
+  .showcase-panel p{ font-size:13.5px; color:var(--muted); line-height:1.6; }
+
+  /* ---------- stats ---------- */
+  .stats{ padding:150px 32px; position:relative; overflow:hidden; }
+  .holo-grid{
+    position:absolute; left:0; right:0; bottom:-10%; height:70%;
+    background-image:
+      linear-gradient(rgba(59,124,255,0.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,124,255,0.18) 1px, transparent 1px);
+    background-size:56px 56px;
+    transform:perspective(600px) rotateX(62deg);
+    -webkit-mask-image:radial-gradient(ellipse 60% 90% at 50% 0%, black 30%, transparent 75%);
+    mask-image:radial-gradient(ellipse 60% 90% at 50% 0%, black 30%, transparent 75%);
+    opacity:.55; pointer-events:none;
+  }
+  .stats-grid{
+    position:relative; z-index:2;
+    display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+    background:var(--glass-border); border:1px solid var(--glass-border); border-radius:16px; overflow:hidden;
+  }
+  .stat-cell{
+    background:var(--bg-alt); padding:38px 28px; text-align:left;
+  }
+  .stat-num{
+    font-family:var(--font-mono); font-weight:500; font-size:clamp(28px,3.4vw,40px);
+    color:var(--text); display:flex; align-items:baseline; gap:2px;
+  }
+  .stat-num small{ font-size:16px; color:var(--cyan); }
+  .stat-label{ margin-top:10px; font-size:12.5px; color:var(--muted); letter-spacing:.02em; }
+
+  /* ---------- final cta ---------- */
+  .final-cta{
+    min-height:80vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:120px 32px; background:transparent;
+  }
+  .final-cta h2{
+    font-family:var(--font-display); font-weight:600; letter-spacing:-.02em;
+    font-size:clamp(34px,6vw,64px); line-height:1.08; margin-bottom:22px;
+  }
+  .final-cta p{ color:var(--muted); max-width:460px; margin-bottom:38px; font-size:15px; line-height:1.6; }
+  .final-links{ margin-top:26px; }
+  .final-links a{ font-size:13.5px; color:var(--muted); border-bottom:1px solid transparent; transition:border-color .3s, color .3s; }
+  .final-links a:hover{ color:var(--cyan); border-color:var(--cyan); }
+
+  /* ---------- footer ---------- */
+  footer{
+    position:relative; z-index:10; background:var(--bg-alt);
+    border-top:1px solid var(--glass-border);
+    padding:36px 32px; display:flex; align-items:center; justify-content:space-between;
+    font-size:12.5px; color:var(--muted-2); flex-wrap:wrap; gap:14px;
+  }
+  .footer-links{ display:flex; gap:26px; }
+  .footer-links a{ transition:color .25s; }
+  .footer-links a:hover{ color:var(--text); }
+
+  @media (prefers-reduced-motion:reduce){
+    *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; }
+  }
+
+  @media (max-width:900px){
+    .cards-grid{ grid-template-columns:repeat(2,1fr); }
+    .stats-grid{ grid-template-columns:repeat(2,1fr); }
+    .nav-only-desktop{ display:none; }
+  }
+  @media (max-width:600px){
+    .cards-grid{ grid-template-columns:1fr; }
+    .stats-grid{ grid-template-columns:1fr; }
+    .hero-stat-strip{ display:none; }
+    .panel-bg{ padding:100px 22px; }
+    .hero{ padding:110px 22px 50px; }
+    .container{ padding:0 22px; }
+  }
+</style>
+</head>
+<body>
+<a href="#hero" class="skip-link">Skip to content</a>
+
+<canvas id="bg-canvas" aria-hidden="true"></canvas>
+<div class="vignette" aria-hidden="true"></div>
+<div class="spotlight" id="spotlight" aria-hidden="true"></div>
+<svg class="grain" aria-hidden="true"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>
+
+<div id="loader">
+  <div class="loader-mark"></div>
+  <div class="loader-text">Initializing Core</div>
+</div>
+
+<nav class="nav" id="nav">
+  <div class="nav-logo"><span class="dot"></span>AXIOM</div>
+  <div class="nav-links nav-only-desktop">
+    <a href="#about">Capabilities</a>
+    <a href="#showcase">Inside the Core</a>
+    <a href="#stats">Numbers</a>
+    <a href="#cta">Access</a>
+  </div>
+  <div class="nav-cta">
+    <button class="btn btn-ghost magnetic nav-only-desktop">Sign In</button>
+    <button class="btn btn-primary magnetic">Get Access</button>
+  </div>
+</nav>
+
+<main>
+
+  <section id="hero" class="section hero">
+    <div class="hero-content">
+      <div class="eyebrow reveal in-view">System status — core online</div>
+      <h1 class="reveal in-view" style="transition-delay:.08s">The compute<br>substrate for<br><span class="grad">what's next.</span></h1>
+      <p class="reveal in-view" style="transition-delay:.16s">AXIOM Core fuses adaptive silicon, photonic interconnects, and a self-organizing neural lattice into a single substrate — built to run whatever comes after the cloud.</p>
+      <div class="cta-row reveal in-view" style="transition-delay:.24s">
+        <button class="btn btn-primary magnetic">Initiate Access</button>
+        <button class="btn btn-ghost magnetic">
+          Watch the Overview
+        </button>
+      </div>
+    </div>
+    <div class="scroll-indicator" aria-hidden="true"><span>Scroll</span><div class="scroll-line"></div></div>
+    <div class="hero-stat-strip" aria-hidden="true">
+      <div class="hero-stat"><b>128</b><span>Nodes / Core</span></div>
+      <div class="hero-stat"><b>0.3ms</b><span>Node Latency</span></div>
+      <div class="hero-stat"><b>99.998%</b><span>Fleet Uptime</span></div>
+    </div>
+  </section>
+
+  <section id="about" class="section about panel-bg">
+    <div class="container">
+      <div class="section-head reveal">
+        <div class="eyebrow">01 / Capabilities</div>
+        <h2>Engineered past the limits of conventional compute.</h2>
+      </div>
+      <div class="cards-grid" id="cards-grid">
+        <!-- cards injected by JS for stagger control -->
+      </div>
+    </div>
+  </section>
+
+  <section id="showcase" class="section showcase">
+    <div class="showcase-inner">
+      <div class="section-head reveal">
+        <div class="eyebrow">02 / Inside the core</div>
+        <h2>One structure. Three systems.</h2>
+      </div>
+      <div class="showcase-stage" id="showcase-stage">
+        <div class="hotspots" id="hotspots">
+          <div class="hotspot" data-view="core"><span class="hotspot-dot"></span><span class="hotspot-label">Core</span></div>
+          <div class="hotspot" data-view="lattice"><span class="hotspot-dot"></span><span class="hotspot-label">Lattice</span></div>
+          <div class="hotspot" data-view="shell"><span class="hotspot-dot"></span><span class="hotspot-label">Shell</span></div>
+        </div>
+      </div>
+      <div class="showcase-caption">Drag to rotate · Select a node to inspect</div>
+      <div class="showcase-panel reveal in-view" id="showcase-panel">
+        <h4 id="panel-title">Quantum-Coherent Core</h4>
+        <p id="panel-desc">The central processing crystal — it holds shared state across 128 synchronized nodes without a central point of failure.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="stats" class="section stats panel-bg">
+    <div class="holo-grid" aria-hidden="true"></div>
+    <div class="container">
+      <div class="section-head reveal">
+        <div class="eyebrow">03 / By the numbers</div>
+        <h2>Numbers that used to sound impossible.</h2>
+      </div>
+      <div class="stats-grid reveal">
+        <div class="stat-cell"><div class="stat-num" data-target="12.4" data-suffix="M"><span class="stat-value">0</span><small>ops/s</small></div><div class="stat-label">Sustained throughput</div></div>
+        <div class="stat-cell"><div class="stat-num" data-target="0.3" data-decimals="1"><span class="stat-value">0</span><small>ms</small></div><div class="stat-label">Average node latency</div></div>
+        <div class="stat-cell"><div class="stat-num" data-target="99.998" data-decimals="3"><span class="stat-value">0</span><small>%</small></div><div class="stat-label">Fleet-wide uptime</div></div>
+        <div class="stat-cell"><div class="stat-num" data-target="128"><span class="stat-value">0</span></div><div class="stat-label">Nodes per cluster</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="cta" class="section final-cta">
+    <div class="eyebrow reveal">04 / Get started</div>
+    <h2 class="reveal">Ready to build<br>beyond the edge?</h2>
+    <p class="reveal">Early access opens in limited waves. Reserve your allocation before the next provisioning cycle closes.</p>
+    <button class="btn btn-primary btn-large magnetic reveal">Request Early Access</button>
+    <div class="final-links reveal"><a href="#">Talk to engineering →</a></div>
+  </section>
+
+</main>
+
+<footer>
+  <div>AXIOM © 2030 — Built beyond the edge.</div>
+  <div class="footer-links">
+    <a href="#">Docs</a>
+    <a href="#">Status</a>
+    <a href="#">Contact</a>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var isMobile = window.matchMedia('(max-width:760px)').matches;
+
+  /* ============ FEATURE CARD DATA ============ */
+  var features = [
+    { title:"Adaptive Silicon", desc:"Circuitry that reconfigures itself in real time, routing power to wherever the workload lives.", icon:'<path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>' },
+    { title:"Photonic Interconnect", desc:"Light-speed data paths between nodes, cutting latency to fractions of a millisecond.", icon:'<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
+    { title:"Neural Lattice", desc:"A self-organizing mesh of compute nodes that learns its own topology as demand shifts.", icon:'<circle cx="12" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/><circle cx="12" cy="20" r="1.6"/><path d="M12 5.6V18.4M6.2 11 10.8 5M17.8 11 13.2 5M6.2 13 10.8 19M17.8 13 13.2 19"/>' },
+    { title:"Zero-Trust Fabric", desc:"Every packet verified at the hardware layer, before it ever reaches a process.", icon:'<path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>' },
+    { title:"Thermal Skin", desc:"A passive cooling shell that dissipates heat without a single moving part.", icon:'<path d="M4 12h16M4 7h10M4 17h13"/>' },
+    { title:"Autonomous Scaling", desc:"Capacity that grows and shrinks with demand — no provisioning, no waiting.", icon:'<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>' }
+  ];
+  var grid = document.getElementById('cards-grid');
+  features.forEach(function(f, i){
+    var el = document.createElement('div');
+    el.className = 'glass-card reveal';
+    el.style.transitionDelay = (i * 0.08) + 's';
+    el.innerHTML =
+      '<div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+f.icon+'</svg></div>'+
+      '<h3>'+f.title+'</h3><p>'+f.desc+'</p>';
+    grid.appendChild(el);
+  });
+
+  document.querySelectorAll('.glass-card').forEach(function(card){
+    card.addEventListener('mousemove', function(e){
+      var r = card.getBoundingClientRect();
+      card.style.setProperty('--cx', ((e.clientX - r.left) / r.width * 100) + '%');
+      card.style.setProperty('--cy', ((e.clientY - r.top) / r.height * 100) + '%');
+    });
+  });
+
+  /* ============ SCROLL REVEAL ============ */
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(entry.isIntersecting){
+        entry.target.classList.add('in-view');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold:0.15 });
+  document.querySelectorAll('.reveal:not(.in-view)').forEach(function(el){ io.observe(el); });
+
+  /* ============ NAV SCROLL STATE ============ */
+  var nav = document.getElementById('nav');
+  window.addEventListener('scroll', function(){
+    nav.classList.toggle('scrolled', window.scrollY > 40);
+  }, { passive:true });
+
+  /* ============ MAGNETIC BUTTONS ============ */
+  document.querySelectorAll('.magnetic').forEach(function(btn){
+    var strength = 0.35;
+    btn.addEventListener('mousemove', function(e){
+      if(reducedMotion) return;
+      var r = btn.getBoundingClientRect();
+      var dx = (e.clientX - (r.left + r.width/2)) * strength;
+      var dy = (e.clientY - (r.top + r.height/2)) * strength;
+      btn.style.transform = 'translate('+dx+'px,'+dy+'px)';
+    });
+    btn.addEventListener('mouseleave', function(){
+      btn.style.transform = 'translate(0,0)';
+    });
+  });
+
+  /* ============ CURSOR SPOTLIGHT ============ */
+  var spotlight = document.getElementById('spotlight');
+  window.addEventListener('mousemove', function(e){
+    spotlight.style.setProperty('--mx', e.clientX + 'px');
+    spotlight.style.setProperty('--my', e.clientY + 'px');
+  }, { passive:true });
+
+  /* ============ ANIMATED COUNTERS ============ */
+  var counters = document.querySelectorAll('.stat-num');
+  var countIO = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(!entry.isIntersecting) return;
+      countIO.unobserve(entry.target);
+      var el = entry.target;
+      var target = parseFloat(el.dataset.target);
+      var decimals = parseInt(el.dataset.decimals || (target % 1 !== 0 ? 1 : 0), 10);
+      var valueEl = el.querySelector('.stat-value');
+      if(reducedMotion){ valueEl.textContent = target.toFixed(decimals); return; }
+      var start = null, duration = 1600;
+      function step(ts){
+        if(!start) start = ts;
+        var p = Math.min((ts - start) / duration, 1);
+        var eased = 1 - Math.pow(1 - p, 3);
+        valueEl.textContent = (target * eased).toFixed(decimals);
+        if(p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+  }, { threshold:0.4 });
+  counters.forEach(function(c){ countIO.observe(c); });
+
+  /* ================================================================
+     THREE.JS SCENE
+     ================================================================ */
+  var canvas = document.getElementById('bg-canvas');
+  var renderer, scene, camera;
+  var coreGroup, ring1, ring2, particles, floorGlow;
+  var anchors = {}; // named local-space anchor points on the core
+  var clock = new THREE.Clock();
+
+  var mouse = { x:0, y:0, tx:0, ty:0 };
+  var scrollY = 0;
+  var activeSection = 'hero';
+  var showcaseActive = false;
+
+  var drag = { active:false, lastX:0, lastY:0, velX:0, velY:0 };
+  var manualRot = { x:0, y:0 };
+  var idleTimer = null;
+
+  var VIEWS = {
+    core:   { rx: 0,     ry: 0 },
+    lattice:{ rx: -0.5,  ry: 1.9 },
+    shell:  { rx: 0.65,  ry: -2.4 }
+  };
+  var currentView = 'core';
+  var targetView = { rx:0, ry:0 };
+
+  function glowTexture(hexColor){
+    var size = 128;
+    var c = document.createElement('canvas');
+    c.width = c.height = size;
+    var ctx = c.getContext('2d');
+    var g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    g.addColorStop(0, hexColor + 'ff');
+    g.addColorStop(0.35, hexColor + '88');
+    g.addColorStop(1, hexColor + '00');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,size,size);
+    var tex = new THREE.CanvasTexture(c);
+    return tex;
+  }
+
+  function initThree(){
+    renderer = new THREE.WebGLRenderer({ canvas:canvas, antialias:true, alpha:true, powerPreference:'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(48, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0, 9);
+
+    // lights
+    scene.add(new THREE.AmbientLight(0x1a1c2b, 1.2));
+    var l1 = new THREE.PointLight(0x3b7cff, 6, 30); l1.position.set(4,3,5); scene.add(l1);
+    var l2 = new THREE.PointLight(0x8b5cf6, 5, 30); l2.position.set(-5,-2,4); scene.add(l2);
+    var l3 = new THREE.PointLight(0x2de2e6, 4, 20); l3.position.set(0,4,-4); scene.add(l3);
+
+    coreGroup = new THREE.Group();
+    scene.add(coreGroup);
+
+    // wireframe outer shell
+    var icoGeo = new THREE.IcosahedronGeometry(1.7, 1);
+    var edges = new THREE.EdgesGeometry(icoGeo);
+    var edgeMat = new THREE.LineBasicMaterial({ color:0x2de2e6, transparent:true, opacity:0.55, blending:THREE.AdditiveBlending });
+    var edgeLines = new THREE.LineSegments(edges, edgeMat);
+    coreGroup.add(edgeLines);
+
+    // inner translucent solid
+    var innerMat = new THREE.MeshPhongMaterial({ color:0x3b7cff, transparent:true, opacity:0.09, shininess:80, side:THREE.DoubleSide });
+    var innerMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.65, 1), innerMat);
+    coreGroup.add(innerMesh);
+
+    // rings
+    var ringMat1 = new THREE.MeshBasicMaterial({ color:0x8b5cf6, transparent:true, opacity:0.5, side:THREE.DoubleSide });
+    ring1 = new THREE.Mesh(new THREE.TorusGeometry(2.5, 0.01, 8, 128), ringMat1);
+    ring1.rotation.x = Math.PI/2.3;
+    coreGroup.add(ring1);
+
+    var ringMat2 = new THREE.MeshBasicMaterial({ color:0x2de2e6, transparent:true, opacity:0.4, side:THREE.DoubleSide });
+    ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.9, 0.008, 8, 128), ringMat2);
+    ring2.rotation.x = Math.PI/1.6;
+    ring2.rotation.y = Math.PI/4;
+    coreGroup.add(ring2);
+
+    // core glow sprite
+    var glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTexture('#3b7cff'), transparent:true, blending:THREE.AdditiveBlending, opacity:0.9 }));
+    glowSprite.scale.set(3.4,3.4,1);
+    coreGroup.add(glowSprite);
+
+    // small node markers at anchor positions
+    var nodeGeo = new THREE.SphereGeometry(0.05, 12, 12);
+    var nodeMat = new THREE.MeshBasicMaterial({ color:0xffffff });
+    ['core','lattice','shell'].forEach(function(key, i){
+      var pos;
+      if(key === 'core') pos = new THREE.Vector3(0, 0, 1.9);
+      if(key === 'lattice') pos = new THREE.Vector3(1.9, 1.0, 0.3);
+      if(key === 'shell') pos = new THREE.Vector3(-1.6, -1.1, 0.9);
+      var node = new THREE.Mesh(nodeGeo, nodeMat);
+      node.position.copy(pos);
+      coreGroup.add(node);
+      anchors[key] = node;
+    });
+
+    // floor glow (fake reflection)
+    var floorTex = glowTexture('#2de2e6');
+    var floorMat = new THREE.MeshBasicMaterial({ map:floorTex, transparent:true, blending:THREE.AdditiveBlending, opacity:0.35, depthWrite:false });
+    floorGlow = new THREE.Mesh(new THREE.PlaneGeometry(9,9), floorMat);
+    floorGlow.rotation.x = -Math.PI/2;
+    floorGlow.position.y = -2.6;
+    scene.add(floorGlow);
+
+    // particles
+    var count = isMobile ? 280 : 900;
+    var posArr = new Float32Array(count*3);
+    for(var i=0;i<count;i++){
+      var r = 6 + Math.random()*10;
+      var theta = Math.random()*Math.PI*2;
+      var phi = Math.acos((Math.random()*2)-1);
+      posArr[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+      posArr[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+      posArr[i*3+2] = r*Math.cos(phi);
+    }
+    var pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    var pMat = new THREE.PointsMaterial({
+      size:0.045, color:0x8fb4ff, transparent:true, opacity:0.55,
+      blending:THREE.AdditiveBlending, depthWrite:false,
+      map:glowTexture('#ffffff'), sizeAttenuation:true
+    });
+    particles = new THREE.Points(pGeo, pMat);
+    scene.add(particles);
+
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize(){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /* ---------- mouse parallax ---------- */
+  window.addEventListener('mousemove', function(e){
+    mouse.tx = (e.clientX/window.innerWidth - 0.5) * 2;
+    mouse.ty = (e.clientY/window.innerHeight - 0.5) * 2;
+  }, { passive:true });
+
+  /* ---------- scroll section tracking ---------- */
+  var sectionTargets = {
+    hero:     { camZ:9,  scale:1,   rot:0.15 },
+    about:    { camZ:13, scale:0.75,rot:0.06 },
+    showcase: { camZ:6,  scale:1.15,rot:0.02 },
+    stats:    { camZ:14, scale:0.7, rot:0.05 },
+    cta:      { camZ:6.2,scale:1.25,rot:0.22 }
+  };
+  var camState = { z:9 };
+  var groupState = { scale:1 };
+
+  var sectionEls = document.querySelectorAll('.section');
+  var secIO = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(entry.isIntersecting && entry.intersectionRatio > 0.5){
+        activeSection = entry.target.id;
+        showcaseActive = (activeSection === 'showcase');
+        document.getElementById('hotspots').style.display = showcaseActive ? 'block' : 'none';
+      }
+    });
+  }, { threshold:[0.5] });
+  sectionEls.forEach(function(s){ secIO.observe(s); });
+
+  /* ---------- drag to rotate (showcase) ---------- */
+  var stage = document.getElementById('showcase-stage');
+  function pointerDown(x,y){
+    drag.active = true; drag.lastX = x; drag.lastY = y; drag.velX = 0; drag.velY = 0;
+    clearTimeout(idleTimer);
+  }
+  function pointerMove(x,y){
+    if(!drag.active) return;
+    var dx = x - drag.lastX, dy = y - drag.lastY;
+    manualRot.y += dx * 0.006;
+    manualRot.x += dy * 0.006;
+    drag.velX = dx * 0.006;
+    drag.velY = dy * 0.006;
+    drag.lastX = x; drag.lastY = y;
+  }
+  function pointerUp(){
+    drag.active = false;
+    idleTimer = setTimeout(function(){ drag.velX = 0; drag.velY = 0; }, 2500);
+  }
+  stage.addEventListener('mousedown', function(e){ pointerDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', function(e){ pointerMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', pointerUp);
+  stage.addEventListener('touchstart', function(e){ var t=e.touches[0]; pointerDown(t.clientX,t.clientY); }, {passive:true});
+  stage.addEventListener('touchmove', function(e){ var t=e.touches[0]; pointerMove(t.clientX,t.clientY); }, {passive:true});
+  stage.addEventListener('touchend', pointerUp);
+  stage.style.cursor = 'grab';
+  stage.addEventListener('mousedown', function(){ stage.style.cursor='grabbing'; });
+  window.addEventListener('mouseup', function(){ stage.style.cursor='grab'; });
+
+  /* ---------- hotspot click -> view transition ---------- */
+  var panelData = {
+    core:   { title:"Quantum-Coherent Core", desc:"The central processing crystal — it holds shared state across 128 synchronized nodes without a central point of failure." },
+    lattice:{ title:"Photonic Lattice", desc:"The light-based interconnect fabric linking every node in under 0.3 milliseconds." },
+    shell:  { title:"Thermal Shell", desc:"A graphene composite skin that radiates heat passively — no fans, no fluid, no moving parts." }
+  };
+  document.querySelectorAll('.hotspot').forEach(function(h){
+    h.addEventListener('click', function(){
+      var view = h.dataset.view;
+      currentView = view;
+      targetView = VIEWS[view];
+      manualRot.x = 0; manualRot.y = 0;
+      document.querySelectorAll('.hotspot').forEach(function(o){ o.classList.remove('active'); });
+      h.classList.add('active');
+      var panel = document.getElementById('showcase-panel');
+      panel.style.opacity = 0; panel.style.transform = 'translateY(6px)';
+      setTimeout(function(){
+        document.getElementById('panel-title').textContent = panelData[view].title;
+        document.getElementById('panel-desc').textContent = panelData[view].desc;
+        panel.style.opacity = 1; panel.style.transform = 'translateY(0)';
+      }, 220);
+    });
+  });
+  document.querySelector('.hotspot[data-view="core"]').classList.add('active');
+
+  /* ---------- project hotspots to screen space ---------- */
+  var stageRect = null;
+  function updateHotspots(){
+    if(!showcaseActive) return;
+    stageRect = stage.getBoundingClientRect();
+    Object.keys(anchors).forEach(function(key){
+      var node = anchors[key];
+      var v = new THREE.Vector3();
+      node.getWorldPosition(v);
+      v.project(camera);
+      var x = (v.x * 0.5 + 0.5) * window.innerWidth;
+      var y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+      var el = document.querySelector('.hotspot[data-view="'+key+'"]');
+      if(!el) return;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      el.style.opacity = (v.z < 1) ? 1 : 0;
+    });
+  }
+
+  /* ---------- render loop ---------- */
+  function animate(){
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var t = clock.elapsedTime;
+
+    // ease mouse
+    mouse.x += (mouse.tx - mouse.x) * 0.04;
+    mouse.y += (mouse.ty - mouse.y) * 0.04;
+
+    // momentum decay on drag release
+    if(!drag.active){
+      manualRot.y += drag.velX;
+      manualRot.x += drag.velY;
+      drag.velX *= 0.94;
+      drag.velY *= 0.94;
+    }
+
+    // base auto rotation (paused during active drag)
+    var autoSpeed = reducedMotion ? 0 : (drag.active ? 0 : 0.09);
+    var targetRX = targetView.rx + manualRot.x + mouse.y * 0.18;
+    var targetRY = targetView.ry + manualRot.y + mouse.x * 0.25 + (reducedMotion?0:t*autoSpeed);
+
+    coreGroup.rotation.x += (targetRX - coreGroup.rotation.x) * 0.06;
+    coreGroup.rotation.y += (targetRY - coreGroup.rotation.y) * 0.06;
+
+    ring1.rotation.z += dt * 0.12;
+    ring2.rotation.z -= dt * 0.09;
+
+    particles.rotation.y += dt * 0.008;
+    particles.rotation.x += dt * 0.003;
+    particles.position.x += ((-mouse.x*0.4) - particles.position.x) * 0.02;
+    particles.position.y += ((-mouse.y*0.3) - particles.position.y) * 0.02;
+
+    // section-driven camera + scale
+    var target = sectionTargets[activeSection] || sectionTargets.hero;
+    camState.z += (target.camZ - camState.z) * 0.045;
+    groupState.scale += (target.scale - groupState.scale) * 0.045;
+    camera.position.z = camState.z;
+    camera.position.x += ((mouse.x * 0.3) - camera.position.x) * 0.03;
+    camera.position.y += ((-mouse.y * 0.2) - camera.position.y) * 0.03;
+    camera.lookAt(0,0,0);
+    coreGroup.scale.setScalar(groupState.scale);
+
+    updateHotspots();
+    renderer.render(scene, camera);
+  }
+
+  /* ---------- boot ---------- */
+  try{
+    initThree();
+    animate();
+  }catch(err){
+    // graceful fallback: hide canvas layers if WebGL unsupported
+    canvas.style.display = 'none';
+    document.body.style.background = 'radial-gradient(circle at 50% 20%, #0d1424, #05060a 60%)';
+    console.warn('3D scene unavailable, using static fallback.', err);
+  }
+
+  window.addEventListener('load', function(){
+    setTimeout(function(){
+      document.getElementById('loader').classList.add('hidden');
+    }, 500);
+  });
+  setTimeout(function(){ document.getElementById('loader').classList.add('hidden'); }, 2600);
+
+})();
+</script>
+</body>
+</html>
